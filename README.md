@@ -2,8 +2,6 @@
 
 This file documents a small Python simulator for a **2-user downlink MISO RSMA** system. It is meant to validate the **RSMA logic and rate calculations**, not to act as a full wireless PHY simulator.
 
-Source code: `/mnt/data/Pasted code(10).py`
-
 ## What the code does
 
 The simulator models a transmitter with multiple antennas sending:
