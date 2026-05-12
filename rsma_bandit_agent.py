@@ -3,63 +3,82 @@ import numpy as np
 from rsma_minimal_sim import SimulationConfig, RSMASimulator, RSMAAction
 
 
-ACTION_SET = [
-    RSMAAction(0.1, 0.45, 0.45, 0.5),
-    RSMAAction(0.2, 0.40, 0.40, 0.5),
-    RSMAAction(0.3, 0.35, 0.35, 0.5),
-    RSMAAction(0.4, 0.30, 0.30, 0.5),
-    RSMAAction(0.5, 0.25, 0.25, 0.5),
-    RSMAAction(0.8, 0.10, 0.10, 0.5),
-]
+def make_action_set(K: int):
+    actions = []
+
+    for pc in [0.05, 0.10, 0.20, 0.30, 0.40, 0.50]:
+        private_total = 1.0 - pc
+
+        actions.append(
+            RSMAAction(
+                power_common=pc,
+                power_private=np.full(K, private_total / K),
+                common_split=np.full(K, 1.0 / K),
+            )
+        )
+
+    return actions
 
 
 def evaluate_round_robin(num_trials_per_action=10000):
+    K = 5
+
     cfg = SimulationConfig(
         n_tx=4,
+        n_users=K,
         snr_db=10.0,
         num_trials=1,
         rng_seed=42,
         csit_error_var=0.00,
-        pathloss_user_1=1.0,
-        pathloss_user_2=2.0,
+        pathloss=np.linspace(1.0, 8.0, K),
+        lambda_sum_rate=0.7,
     )
 
-    sim = RSMASimulator(cfg)
+    groups = [
+        [0, 1],
+        [2, 3, 4],
+    ]
 
-    rewards = np.zeros(len(ACTION_SET))
-    counts = np.zeros(len(ACTION_SET))
+    sim = RSMASimulator(cfg, groups=groups)
+    action_set = make_action_set(K)
 
-    for action_index, action in enumerate(ACTION_SET):
+    rewards = np.zeros(len(action_set))
+    counts = np.zeros(len(action_set))
+
+    for action_index, action in enumerate(action_set):
         for _ in range(num_trials_per_action):
             state = sim.sample_state()
 
             result = sim.evaluate_action(
-                h1=state["h1"],
-                h2=state["h2"],
-                h1_hat=state["h1_hat"],
-                h2_hat=state["h2_hat"],
+                h=state["h"],
+                h_hat=state["h_hat"],
                 action=action,
             )
 
-            rewards[action_index] += result.sum_rate
+            # Choose what the bandit is optimizing:
+            rewards[action_index] += result.grouped_reward
+            # alternatives:
+            # rewards[action_index] += result.grouped_sum_rate
+            # rewards[action_index] += result.sum_rate
+            # rewards[action_index] += result.sdma_reward
+
             counts[action_index] += 1
 
     avg_rewards = rewards / counts
 
     print("\nRound-robin action evaluation:")
-    for i, action in enumerate(ACTION_SET):
+    for i, action in enumerate(action_set):
         print(
             f"Action {i}: "
             f"Pc={action.power_common:.2f}, "
-            f"P1={action.power_private_1:.2f}, "
-            f"P2={action.power_private_2:.2f}, "
-            f"alpha={action.common_split_alpha:.2f} "
+            f"Ppriv={np.round(action.power_private, 3)}, "
+            f"Csplit={np.round(action.common_split, 3)} "
             f"-> avg reward={avg_rewards[i]:.4f}, "
             f"tested {int(counts[i])} times"
         )
 
     best_index = int(np.argmax(avg_rewards))
-    best_action = ACTION_SET[best_index]
+    best_action = action_set[best_index]
 
     print("\nBest round-robin action:")
     print(best_action)
